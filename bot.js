@@ -11,6 +11,8 @@ bot.on("ready", () => {
   console.log(`${bot.user.tag} has logged in.`)
 })
 
+const numbers = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
 bot.on('message', (message) => {
   if (message.author.bot) return
   if (message.content.startsWith(PREFIX)) {
@@ -104,14 +106,14 @@ bot.on('message', (message) => {
     }
 
     if (!player.currentGame.started) return // anything below is for players in an active game
-
     // Battle Commands
     switch (CMD_NAME) {
       case "a":
       case "attack":
         if (args.length === 0) return message.reply("who are you attacking?")
-        if (typeof(args[0]) === "number") {
-          const target = player.currentGame.players[args[0] - 1] // LETS HOPE THIS BINDS
+        const targetStr = args[0]
+        if (numbers.includes(targetStr)) {
+          const target = player.currentGame.players[numbers.indexOf(targetStr)]
           if (target === undefined) return message.reply("no target has that number")
 
           const errorMessage = player.attack(target)
@@ -130,7 +132,9 @@ const helpEmbed = new MessageEmbed()
   .setColor("#ebe700")
   .setTitle("Commands") // documentation: https://discordjs.guide/popular-topics/embeds.html#using-the-embed-constructor
   .addFields(
-    { name: "Player Creation Commands", value: "`create`, `profile`, `join`" }
+    { name: "Player Commands", value: "`create`, `profile`, `join`" },
+    { name: "Game Manage Commands", value: "`start`, `end` "},
+    { name: "Battle Commands", value: "`attack` "}
   )
 
 class Game {
@@ -145,6 +149,10 @@ class Game {
 
   get name() {
     return this._name
+  }
+
+  get started() {
+    return this._started
   }
 
   get players() {
@@ -184,16 +192,17 @@ class Game {
 
   get info() {
     let playersString = ""
-    this.players.forEach(player => {
-      playersString += `**${player.user.tag}** \n`
-    })
     for (let i = 0; i < this.players.length; i++) {
       playersString += `[P${i + 1}] **${this.players[i].user.tag}** \n`
+    }
+    
+    if (playersString === "") {
+      playersString = "none"
     }
 
     return new MessageEmbed()
       .setColor("#009133")
-      .setTitle(`${this.name} Info`)
+      .setTitle(`${this.name} - Info`)
       .setDescription(`**Started**: ${this._started}`)
       .addFields(
         { name: "Players", value: playersString },
