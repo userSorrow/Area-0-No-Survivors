@@ -93,13 +93,13 @@ bot.on('message', (message) => {
         }
         break
       case "end":
-        player.currentGame.end()
-
         let endingMessage = ""
         player.currentGame.players.forEach(participant => {
           endingMessage += `${participant.user.toString()} `
         })
         endingMessage += `**${player.currentGame.name}** has ended!`
+
+        player.currentGame.end()
 
         message.channel.send(endingMessage)
         break
@@ -177,16 +177,16 @@ class Game {
   start() {
     if (this._started) return "game has already started"
     this._started = true
-    this._timeInterval = setInterval(() => {
-      this.players.forEach(player => {
-        player.decreaseCooldowns()
-      })
-    }, 1000)
     return false
   }
 
   end() {
     clearInterval(this._timeInterval)
+    this._started = false // or remove game?
+    this.players.forEach(player => {
+      player.reset()
+    })
+    this._players = []
     console.log(`${this.name} has ended!`)
   }
 
@@ -221,8 +221,15 @@ class Player {
     this._location = "none"
     this._health = 100
     this._cooldowns = {
-      movement: 0,
-      action: 0
+      _movement: 0,
+      _action: 0,
+
+      get movement() {
+        return this._movement
+      },
+      get action() {
+        return this._action
+      }
     }
 
     this._primary = fists
@@ -270,9 +277,35 @@ class Player {
     this._currentGame = newGame
   }
 
-  decreaseCooldowns() {
-    this._cooldowns.movement--
-    this._cooldowns.action--
+  setMoveCooldown(cooldown) { // CHANGE
+    this._cooldowns._movement = cooldown
+
+    function decreaseCD() {
+      setTimeout(() => {
+        this._cooldowns._movement -= 0.1
+        if (this.cooldowns.movement > 0) {
+          decreaseCD()
+        }
+      }, 100)
+    }
+
+    decreaseCD()
+  }
+
+  _decreaseActionCooldown() {
+    setTimeout(() => {
+      this._cooldowns._action -= 0.25
+      console.log(this._cooldowns._action)
+      if (this.cooldowns.action > 0) {
+        this._decreaseActionCooldown()
+      }
+    }, 250)
+  }
+
+  setActionCooldown(cooldown) {
+    this._cooldowns._action = cooldown
+    
+    this._decreaseActionCooldown()
   }
 
   loseHp(damage) {
@@ -294,7 +327,7 @@ class Player {
     } else if (this.location !== target.location) {
       return `${target.user.username} is too far away!`
     } else {
-      this.cooldowns.action = this.primary.cooldown
+      this.setActionCooldown(this.primary.cooldown)
       target.loseHp(this.primary.damage)
       return false
     }
@@ -306,6 +339,27 @@ class Player {
     } else {
       this._inventory.push(item)
     }
+  }
+
+  reset() {
+    this._currentGame = { name: "No Game" }
+    this._location = "none"
+    this._health = 100
+    this._cooldowns = {
+      _movement: 0,
+      _action: 0,
+
+      get movement() {
+        return this._movement
+      },
+      get action() {
+        return this._action
+      }
+    }
+
+    this._primary = fists
+    this._secondary = "none"
+    this._inventory = []
   }
 
   get profile() {
@@ -376,8 +430,8 @@ class Item {
 new Game();
 
 // Weapons
-const fists = new Weapon(false, "fists", 2, 15)
-const rifle = new Weapon(false, "rifle", 3, 33)
+const fists = new Weapon(false, "fists", 3, 15)
+const rifle = new Weapon(false, "rifle", 4, 33)
 
 // Items
 const bandages = new Item("bandages", 10, {}) // NOT DONE
