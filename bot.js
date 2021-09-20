@@ -90,6 +90,38 @@ bot.on('message', (message) => {
           message.channel.send(startingMessage)
         }
         break
+      case "end":
+        player.currentGame.end()
+
+        let endingMessage = ""
+        player.currentGame.players.forEach(participant => {
+          endingMessage += `${participant.user.toString()} `
+        })
+        endingMessage += `**${player.currentGame.name}** has ended!`
+
+        message.channel.send(endingMessage)
+        break
+    }
+
+    if (!player.currentGame.started) return // anything below is for players in an active game
+
+    // Battle Commands
+    switch (CMD_NAME) {
+      case "a":
+      case "attack":
+        if (args.length === 0) return message.reply("who are you attacking?")
+        if (typeof(args[0]) === "number") {
+          const target = player.currentGame.players[args[0] - 1] // LETS HOPE THIS BINDS
+          if (target === undefined) return message.reply("no target has that number")
+
+          const errorMessage = player.attack(target)
+          if (errorMessage) {
+            message.reply(errorMessage)
+          } else {
+            message.channel.send(`**${player.user.username}** attacked **${target.user.username}** with **${player.primary.name}**`)
+          }
+        }
+        break
     }
   }
 })
@@ -105,7 +137,8 @@ class Game {
   constructor() {
     this._players = []
     this._name = `Game ${Game.all.push(this)}`
-    this._started = false;
+    this._started = false
+    this._timeInterval = setInterval(() => console.log(`${this.name} passed 1 more min`), 60000)
 
     console.log(`Created ${this.name}`)
   }
@@ -136,7 +169,17 @@ class Game {
   start() {
     if (this._started) return "game has already started"
     this._started = true
+    this._timeInterval = setInterval(() => {
+      this.players.forEach(player => {
+        player.decreaseCooldowns()
+      })
+    }, 1000)
     return false
+  }
+
+  end() {
+    clearInterval(this._timeInterval)
+    console.log(`${this.name} has ended!`)
   }
 
   get info() {
@@ -144,6 +187,9 @@ class Game {
     this.players.forEach(player => {
       playersString += `**${player.user.tag}** \n`
     })
+    for (let i = 0; i < this.players.length; i++) {
+      playersString += `[P${i + 1}] **${this.players[i].user.tag}** \n`
+    }
 
     return new MessageEmbed()
       .setColor("#009133")
@@ -167,7 +213,7 @@ class Player {
     this._health = 100
     this._cooldowns = {
       movement: 0,
-      attack: 0
+      action: 0
     }
 
     this._primary = fists
@@ -215,6 +261,11 @@ class Player {
     this._currentGame = newGame
   }
 
+  decreaseCooldowns() {
+    this._cooldowns.movement--
+    this._cooldowns.action--
+  }
+
   loseHp(damage) {
     if (this.health < damage) {
       this._health = 0
@@ -224,12 +275,19 @@ class Player {
   }
 
   /**
-   * 
+   * Remember to ping target and player
    * @param {Player} target 
+   * @returns an errorMessage or false
    */
   attack(target) {
-    if (this.location === target.location) {
+    if (this.cooldowns.action > 0) {
+      return `you have a **${this.cooldowns.action}s** cooldown!`
+    } else if (this.location !== target.location) {
+      return `${target.user.username} is too far away!`
+    } else {
+      this.cooldowns.action = this.primary.cooldown
       target.loseHp(this.primary.damage)
+      return false
     }
   }
 
@@ -266,15 +324,13 @@ class Weapon {
    * 
    * @param {*} icon 
    * @param {string} name 
-   * @param {number} hitDelay 
-   * @param {number} hitCooldown 
+   * @param {number} cooldown 
    * @param {number} damage 
    */
-  constructor(icon, name, hitDelay, hitCooldown, damage) {
+  constructor(icon, name, cooldown, damage) {
     this._icon = icon
     this._name = name
-    this._hitDelay = hitDelay
-    this._hitCooldown = hitCooldown
+    this._cooldown = cooldown
     this._damage = damage
 
     Weapon.all.push(this)
@@ -288,12 +344,8 @@ class Weapon {
     return this._name
   }
 
-  get hitDelay() {
-    return this._hitDelay
-  }
-
-  get hitCooldown() {
-    return this._hitCooldown
+  get cooldown() {
+    return this._cooldown
   }
 
   get damage() {
@@ -315,8 +367,8 @@ class Item {
 new Game();
 
 // Weapons
-const fists = new Weapon(false, "fists", 1, 2, 15)
-const rifle = new Weapon(false, "rifle", 0, 3, 33)
+const fists = new Weapon(false, "fists", 2, 15)
+const rifle = new Weapon(false, "rifle", 3, 33)
 
 // Items
 const bandages = new Item("bandages", 10, {}) // NOT DONE
