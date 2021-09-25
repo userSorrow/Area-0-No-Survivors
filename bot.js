@@ -11,7 +11,7 @@ bot.on("ready", () => {
   console.log(`${bot.user.tag} has logged in.`)
 })
 
-const numbers = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+const numbers = ["1", "2", "3", "4", "5"]
 
 bot.on('message', (message) => {
   if (message.author.bot) return
@@ -87,7 +87,7 @@ bot.on('message', (message) => {
           player.currentGame.players.forEach(participant => {
             startingMessage += `${participant.user.toString()} `
           })
-          startingMessage += `**${player.currentGame.name}** is starting!`
+          startingMessage += `**${player.currentGame.name}** has started!`
 
           message.channel.send(startingMessage)
         }
@@ -110,7 +110,7 @@ bot.on('message', (message) => {
     switch (CMD_NAME) {
       case "a":
       case "attack":
-        if (args.length === 0) return message.reply("who are you attacking?")
+        if (args.length === 0) return message.reply("include who you are attacking")
         const targetStr = args[0]
         if (numbers.includes(targetStr)) {
           const target = player.currentGame.players[numbers.indexOf(targetStr)]
@@ -120,8 +120,40 @@ bot.on('message', (message) => {
           if (errorMessage) {
             message.reply(errorMessage)
           } else {
-            message.channel.send(`**${player.user.username}** attacked **${target.user.username}** with **${player.primary.name}**`)
+            message.channel.send(`**${player.pName}** attacked **${target.pName}** with **${player.primary.name}**`)
+            if (target.health === 0) {
+              message.channel.send(`${target.user.toString()}, you died! Removing your character...`)
+              target.deleteThis() // Does not work since cooldown will try to access the properties and cause an error
+            }
           }
+        }
+        break
+      case "l":
+      case "look":
+        message.channel.send({ embed: player.roomInfo })
+        break
+      case "m":
+      case "move":
+        if (args.length === 0) return message.reply("include where you want to move")
+        const targetRoom = args[0].toUpperCase()
+        const success = player.moveTo(targetRoom)
+        if (success) {
+          message.channel.send(`**${player.pName}** moved to **${player.location}**`)
+        } else {
+          message.reply("not a current exit!")
+        }
+        break
+      case "e":
+      case "equip":
+        if (args.length === 0) return message.reply("include which the number of the weapon you want to equip")
+        const weaponNumString = args[0]
+        if (!numbers.includes(weaponNumString)) return message.reply("no weapon has that number")
+        const weaponNum = numbers.indexOf(weaponNumString) + 1
+        const errorMessage = player.equip(weaponNum)
+        if (errorMessage) {
+          message.reply(errorMessage)
+        } else {
+          message.channel.send(`**${player.pName}** equipped ${player.primary.name} as primary`)
         }
         break
     }
@@ -137,12 +169,123 @@ const helpEmbed = new MessageEmbed()
     { name: "Battle Commands", value: "`attack` "}
   )
 
+
+/**
+ * 
+ * @param {array} arr 
+ * @returns random element of arr
+ */
+function getRandomElementFrom(arr) {
+  const randomInd = Math.floor(Math.random() * arr.length)
+  return arr[randomInd]
+}
+
+/**
+ * 
+ * @param {array} arr 
+ * @param {array} properties 
+ * @param {boolean} isNumbered 
+ * @returns 
+ */
+function propertiesStringify(arr, properties, isNumbered) {
+  let numberedString = ""
+  for (let i = 0; i < arr.length; i++) {
+    let value = arr[i]
+    properties.forEach(property => {
+      value = value[property]
+    })
+
+    let number = ""
+    if (isNumbered) {
+      number = `[${i + 1}] `
+    }
+
+    numberedString += `${number}${value}\n`
+  }
+  if (numberedString === "") {
+    numberedString = "none"
+  }
+
+  return numberedString
+}
+
 class Game {
   constructor() {
     this._players = []
     this._name = `Game ${Game.all.push(this)}`
     this._started = false
     this._timeInterval = setInterval(() => console.log(`${this.name} passed 1 more min`), 60000)
+    this._mapAreas = {
+      floor1: {
+        R1: {
+          weapons: [],
+          items: [],
+          exits: ["H1", "H2"]
+        },
+
+        H1: {
+          exits: ["R1", "R2", "R3"]
+        },
+
+        R2: {
+          weapons: [],
+          items: [],
+          exits: ["H1"],
+          stairsTo: "H3"
+        },
+
+        H2: {
+          exits: ["R1", "R3"],
+          stairsTo: "H4"
+        },
+
+        R3: {
+          weapons: [],
+          items: [],
+          exits: ["H1", "H2"]
+        },
+
+        Safe: {
+          weapons: [],
+          items: [], // Sword?
+          exits: [],
+          stairsTo: "R6"
+        }
+      },
+
+      floor2: {
+        R4: {
+          weapons: [],
+          items: [],
+          exits: ["H3", "H4"]
+        },
+
+        H3: {
+          exits: ["R4", "R5"],
+          stairsTo: "R2"
+        },
+
+        H4: {
+          exits: ["R4", "R5"],
+          stairsTo: "H2"
+        },
+
+        R5: {
+          weapons: [],
+          items: [],
+          exits: ["H3", "H4", "H5", "R6"] // R6 exit is via a tunnel
+        },
+
+        H5: {
+          exits: ["R5"]
+        },
+
+        R6: {
+          exits: ["R5"], // No items for Room 6
+          stairsTo: "Safe"
+        },
+      }
+    }
 
     console.log(`Created ${this.name}`)
   }
@@ -157,6 +300,20 @@ class Game {
 
   get players() {
     return this._players
+  }
+
+  get mapAreas() {
+    return this._mapAreas
+  }
+
+  playersIn(room) {
+    return this.players.filter(player => player.room = room)
+  }
+
+  hasStairsIn(room) {
+    const floorInd = Object.keys(this._mapAreas.floor1).includes(room) ? 0 : 1 // index of floor of location
+    const floor = Object.keys(this._mapAreas)[floorInd]
+    return Object.keys(this._mapAreas[floor][room]).includes("stairsTo")
   }
 
   addPlayer(player) {
@@ -176,6 +333,10 @@ class Game {
 
   start() {
     if (this._started) return "game has already started"
+    Weapon.randomlyAddTo(this)
+    this.players.forEach(player => {
+      player.randomizeLocation()
+    })
     this._started = true
     return false
   }
@@ -217,7 +378,7 @@ class Player {
   constructor(user) {
     this._user = user
 
-    this._currentGame = { name: "No Game" }
+    this._currentGame = { name: "No Game", mapAreas: {} }
     this._location = "none"
     this._health = 100
     this._cooldowns = {
@@ -232,8 +393,8 @@ class Player {
       }
     }
 
-    this._primary = fists
-    this._secondary = "none"
+    this._primary = weaponFists
+    this._secondary = { name: "none" }
     this._inventory = []
 
     Player.allIds.push(this.user.id)
@@ -245,12 +406,28 @@ class Player {
     return this._user
   }
 
+  /**
+   * gets Player Number + Player Name
+   */
+  get pName() {
+    return `[P${this.currentGame.players.indexOf(this) + 1}] ${this.user.username}`
+  }
+
   get currentGame() {
     return this._currentGame
   }
 
   get location() {
     return this._location
+  }
+
+  get floor() {
+    const floorInd = Object.keys(this.currentGame.mapAreas.floor1).includes(this.location) ? 0 : 1 // index of floor of location
+    return Object.keys(this.currentGame.mapAreas)[floorInd]
+  }
+
+  get currentExits() {
+    return this.currentGame.mapAreas[this.floor][this.location].exits
   }
 
   get health() {
@@ -269,6 +446,37 @@ class Player {
     return this._secondary
   }
 
+  get availableItems() {
+    const player = this
+    return {
+      weapons: player.currentGame.mapAreas[player.floor][player._location].weapons || [],
+      items: player.currentGame.mapAreas[player.floor][player._location].items || [],
+    }
+  }
+
+  get roomInfo() {
+    const weaponsString = propertiesStringify(this.availableItems.weapons, ["name"], true)
+    const itemsString = propertiesStringify(this.availableItems.items, ["name"], true)
+    const nearbyPlayers = this.currentGame.playersIn(this._location)
+    const playersString = propertiesStringify(nearbyPlayers, ["pName"], false)
+    let exitsString = this.currentExits.join(", ")
+    if (this.currentGame.hasStairsIn(this.location)) {
+      exitsString += `, stairs: ${this._currentGame.mapAreas[this.floor][this.location].stairsTo}`
+    }
+
+    return new MessageEmbed()
+      .setColor("#dbaa48")
+      .setTitle(`Location ${this.location}`)
+      .setAuthor(`${this.user.username} in ${this.currentGame.name}`, this.user.avatarURL())
+      .addFields(
+        { name: "Weapons", value: weaponsString },
+        { name: "Items", value: itemsString },
+        { name: `Players in ${this.location}`, value: playersString },
+        { name: "Exits", value: exitsString }
+      )
+      .setFooter("Area 0: No Survivors", bot.user.avatarURL())
+  }
+
   get inventory() {
     return this._inventory
   }
@@ -277,29 +485,56 @@ class Player {
     this._currentGame = newGame
   }
 
-  setMoveCooldown(cooldown) { // CHANGE
+  randomizeLocation() {
+    const takenLocations = this.currentGame.players.map(player => player.location)
+    const newFloor = getRandomElementFrom(Object.keys(this.currentGame.mapAreas))
+    const newLocations = Object.keys(this.currentGame.mapAreas[newFloor])
+      .filter(room => room.charAt(0) === 'H') // can be single or double quotes
+      .filter(room => !takenLocations.includes(room))
+    
+    this._location = getRandomElementFrom(newLocations)
+  }
+
+  _decreaseMoveCooldown() {
+    setTimeout(() => {
+      this._cooldowns._movement -= 0.5
+      if (this.cooldowns.movement > 0) {
+        this._decreaseMoveCooldown()
+      }
+    }, 500)
+  }
+
+  setMoveCooldown(cooldown) {
     this._cooldowns._movement = cooldown
+    
+    this._decreaseMoveCooldown()
+  }
 
-    function decreaseCD() {
-      setTimeout(() => {
-        this._cooldowns._movement -= 0.1
-        if (this.cooldowns.movement > 0) {
-          decreaseCD()
-        }
-      }, 100)
+  moveTo(room) {
+    if (this.currentExits.includes(room)) {
+      this._location = room
+      return true // no error
+    } else {
+      return false
     }
+  }
 
-    decreaseCD()
+  changeFloor() {
+    if (Object.keys(this.currentGame.mapAreas[this.floor][this.location]).includes("stairsTo")) {
+      this._location = this.currentGame.mapAreas[this.floor][this.location].stairsTo
+      return true
+    } else {
+      return false
+    }
   }
 
   _decreaseActionCooldown() {
     setTimeout(() => {
-      this._cooldowns._action -= 0.25
-      console.log(this._cooldowns._action)
+      this._cooldowns._action -= 0.5
       if (this.cooldowns.action > 0) {
         this._decreaseActionCooldown()
       }
-    }, 250)
+    }, 500)
   }
 
   setActionCooldown(cooldown) {
@@ -333,6 +568,26 @@ class Player {
     }
   }
 
+  equip(weaponNumber) {
+    if (this.secondary.name === "none") {
+      this._secondary = this._primary
+    }
+
+    const inWeaponRoom = Object.keys(this.currentGame.mapAreas[this.floor][this.location]).includes("weapons")
+    if (inWeaponRoom) {
+      const roomHasWeapon = weaponNumber > 0 && weaponNumber <= this.currentGame.mapAreas[this.floor][this.location].weapons.length
+      // <= because weaponNumber is index + 1
+      if (roomHasWeapon) {
+        this._primary = this.currentGame.mapAreas[this.floor][this.location].weapons[weaponNumber - 1]
+        return false
+      } else {
+        return `no weapon has that number`
+      }
+    } else {
+      return `no weapons here`
+    }
+  }
+
   addItem(item) {
     if (this._inventory.length === 3) {
       return false
@@ -342,7 +597,7 @@ class Player {
   }
 
   reset() {
-    this._currentGame = { name: "No Game" }
+    this._currentGame = { name: "No Game", mapAreas: {} }
     this._location = "none"
     this._health = 100
     this._cooldowns = {
@@ -357,9 +612,19 @@ class Player {
       }
     }
 
-    this._primary = fists
-    this._secondary = "none"
+    this._primary = weaponFists
+    this._secondary = { name: "none" }
     this._inventory = []
+  }
+
+  deleteThis() {
+    const properties = Object.keys(this)
+    const playerTag = this.user.tag
+    properties.forEach(property => {
+      delete this[property]
+    })
+
+    console.log(`deleted ${playerTag}`)
   }
 
   get profile() {
@@ -369,7 +634,7 @@ class Player {
       .setThumbnail(this.user.avatarURL())
       .addFields(
         { name: "Stats", value: `**Location**: ${this._location}\n **Health**: ${this._health}` },
-        { name: "Weapons", value: `**Primary**: ${this.primary.name}\n **Secondary**: ${this.secondary}` },
+        { name: "Weapons", value: `**Primary**: ${this.primary.name.toUpperCase()}\n **Secondary**: ${this.secondary.name.toUpperCase()}` },
         { name: "Item 1", value: this.inventory[0], inline: true },
         { name: "Item 2", value: this.inventory[1], inline: true },
         { name: "Item 3", value: this.inventory[2], inline: true }
@@ -389,14 +654,17 @@ class Weapon {
    * @param {string} name 
    * @param {number} cooldown 
    * @param {number} damage 
+   * @param {number} numCopies how many of this weapon that can be added in each game
    */
-  constructor(icon, name, cooldown, damage) {
+  constructor(icon, name, cooldown, damage, numCopies) {
     this._icon = icon
     this._name = name
+    this._numCopies = numCopies
+    this._copiesLeft = numCopies
     this._cooldown = cooldown
     this._damage = damage
 
-    Weapon.all.push(this)
+    Weapon.all.push(this) // never change the properties: each weapon is used by multiple players in multiple games
   }
 
   get icon() {
@@ -416,6 +684,29 @@ class Weapon {
   }
 
   static all = []
+  static _chooseRandom() {
+    const remainingSet = Weapon.all.filter(weapon => weapon._copiesLeft > 0) // makes a new copy of available weapons; weapons with no more copies are removed
+    
+    return getRandomElementFrom(remainingSet) // copy, not reference
+  }
+
+  /**
+   * Adds a random weapon to every weapon room in Game game
+   * @param {Game} game 
+   */
+  static randomlyAddTo(game) {
+    const floors = Object.keys(game.mapAreas)
+    floors.forEach(floor => {
+      const floorRooms = Object.keys(game.mapAreas[floor]).filter(room => Object.keys(game.mapAreas[floor][room]).includes("weapons"))
+
+      floorRooms.forEach(room => {
+        const addedWeapon = Weapon._chooseRandom()
+        addedWeapon._copiesLeft--
+
+        game.mapAreas[floor][room].weapons.push(addedWeapon)
+      })
+    })
+  }
 }
 
 class Item {
@@ -424,14 +715,21 @@ class Item {
     this._time = time
     this._action = action // callback function?
   }
+
+  get name() {
+    return this._name
+  }
 }
 
 // First Game
 new Game();
 
 // Weapons
-const fists = new Weapon(false, "fists", 3, 15)
-const rifle = new Weapon(false, "rifle", 4, 33)
+const weaponFists = new Weapon(false, "fists", 3, 13, 0)
+const weaponRifle = new Weapon(false, "rifle", 4, 33, 2)
+const weaponPistol = new Weapon(false, "pistol", 4, 18, 3)
+const weaponSword = new Weapon(false, "sword", 8, 60, 1)
+
 
 // Items
 const bandages = new Item("bandages", 10, {}) // NOT DONE
@@ -443,3 +741,25 @@ const bandages = new Item("bandages", 10, {}) // NOT DONE
 // Look around
 // goto
 
+
+// Debugging purposes
+const obj1 = {
+  hi: "there",
+  bills: [1, 2],
+  noHi() {
+    this.hi = "no"
+  }
+}
+
+const billy = obj1.bills
+billy.splice(0, 1) // affects obj1
+console.log(obj1.bills) // prints "[2]"
+
+const set1 = [1, 2, 3]
+const set2 = set1
+set2.splice(0, 1) // affects set1
+console.log(set1) // prints "[2, 3]"
+
+const change = obj1
+change.noHi() // affects obj1
+console.log(obj1.hi) // prints "no"!
