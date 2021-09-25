@@ -22,27 +22,25 @@ bot.on('message', (message) => {
       .substring(PREFIX.length)
       .split(/\s+/)
 
+    let justCreated = false
     switch (CMD_NAME) {
       case "hello":
-        message.channel.send("Hi, " + message.author.toString())
-        break
+        return message.channel.send("Hi, " + message.author.toString())
       case "h":
       case "help":
-        message.channel.send({ embed: helpEmbed })
-        break
+        return message.channel.send({ embed: helpEmbed })
       case "c":
       case "create":
         if (!Player.allIds.includes(message.author.id)) {
           const player = new Player(message.author)
-          message.reply(`created player **${player.user.username}**`)
+          justCreated = true
+          return message.reply(`created player **${player.user.username}**`)
         } else {
-          message.reply("you already created a player")
+          return message.reply("you already created a player")
         }
-        break
       case "game":
         const game = Game.all[0] // change 0 to variable for multiple games
-        message.channel.send({ embed: game.info })
-        break
+        return message.channel.send({ embed: game.info })
       case "p":
       case "profile":
       case "j":
@@ -53,13 +51,17 @@ bot.on('message', (message) => {
         break
     }
 
-    if (!Player.allIds.includes(message.author.id)) return // anything below is for players who already have characters
-    const player = Player.all[Player.allIds.indexOf(message.author.id)] // gets player's object
+    const playerInd = Player.allIds.indexOf(message.author.id)
+    if (playerInd === -1 || justCreated) return // anything below is for players who already have characters
+    const player = Player.all[playerInd] // gets player's object
+
+    const stillAlive = Object.keys(player).includes("_user") && player.health > 0
+    if (!stillAlive) return message.channel.send({ embed: deathProfile(message.author) }) // anything below is for players with alive characters
 
     switch (CMD_NAME) {
       case "p":
       case "profile":
-        message.channel.send({ embed: player.profile })
+        return message.channel.send({ embed: player.profile })
         break
       case "j":
       case "join":
@@ -106,6 +108,21 @@ bot.on('message', (message) => {
     }
 
     if (!player.currentGame.started) return // anything below is for players in an active game
+    // debug
+    function playerDie(deadPlayer) {
+      message.channel.send(`${deadPlayer.user.toString()}, you died! Deleting your character. . .`)
+      message.channel.send(deathProfile(deadPlayer.user))
+      deadPlayer.deleteThis()
+    }
+
+    if (CMD_NAME === "debug") {
+      switch (args[0]) {
+        case "die":
+          player.loseHp(100)
+          return playerDie(player)
+      }
+    }
+
     // Battle Commands
     switch (CMD_NAME) {
       case "a":
@@ -122,8 +139,7 @@ bot.on('message', (message) => {
           } else {
             message.channel.send(`**${player.pName}** attacked **${target.pName}** with **${player.primary.name}**`)
             if (target.health === 0) {
-              message.channel.send(`${target.user.toString()}, you died! Removing your character...`)
-              target.deleteThis() // Does not work since cooldown will try to access the properties and cause an error
+              playerDie(target)
             }
           }
         }
@@ -132,17 +148,37 @@ bot.on('message', (message) => {
       case "look":
         message.channel.send({ embed: player.roomInfo })
         break
+      case "go":
+      case "room":
       case "m":
-      case "move":
+      case "move": {
         if (args.length === 0) return message.reply("include where you want to move")
+
         const targetRoom = args[0].toUpperCase()
-        const success = player.moveTo(targetRoom)
-        if (success) {
-          message.channel.send(`**${player.pName}** moved to **${player.location}**`)
+        const errorMessage = player.moveTo(targetRoom)
+        if (errorMessage) return message.reply(errorMessage)
+
+        return message.channel.send(`**${player.pName}** moved to **${player.location}**`)
+      }
+      case "stairs": {
+        const errorMessage = player.useStairs()
+        if (errorMessage) return message.reply(errorMessage)
+
+        return message.channel.send(`**${player.pName}** moved to **${player.location}**`)
+      }
+      case "cd":
+      case "cooldowns":
+        message.channel.send({ embed: player.cooldownInfo })
+        break
+      case "switch": {
+        const errorMessage = player.switchWeapons()
+        if (errorMessage) {
+          message.reply(errorMessage)
         } else {
-          message.reply("not a current exit!")
+          message.channel.send(`**${player.pName}** switched to weapon **${player.primary.name}**`)
         }
         break
+      }
       case "e":
       case "equip":
         if (args.length === 0) return message.reply("include which the number of the weapon you want to equip")
@@ -153,7 +189,7 @@ bot.on('message', (message) => {
         if (errorMessage) {
           message.reply(errorMessage)
         } else {
-          message.channel.send(`**${player.pName}** equipped ${player.primary.name} as primary`)
+          message.channel.send(`**${player.pName}** equipped **${player.primary.name}** as primary`)
         }
         break
     }
@@ -165,8 +201,8 @@ const helpEmbed = new MessageEmbed()
   .setTitle("Commands") // documentation: https://discordjs.guide/popular-topics/embeds.html#using-the-embed-constructor
   .addFields(
     { name: "Player Commands", value: "`create`, `profile`, `join`" },
-    { name: "Game Manage Commands", value: "`start`, `end` "},
-    { name: "Battle Commands", value: "`attack` "}
+    { name: "Game Manage Commands", value: "`start`, `end` " },
+    { name: "Battle Commands", value: "`attack` " }
   )
 
 
@@ -209,6 +245,15 @@ function propertiesStringify(arr, properties, isNumbered) {
   return numberedString
 }
 
+function deathProfile(player) {
+  return new MessageEmbed()
+    .setColor("#940115")
+    .setTitle(`${player.username}`)
+    .setThumbnail(player.avatarURL())
+    .setDescription("☠️ You are dead! ☠️\n" + "Removing your character. . .")
+
+}
+
 class Game {
   constructor() {
     this._players = []
@@ -247,7 +292,7 @@ class Game {
 
         Safe: {
           weapons: [],
-          items: [], // Sword?
+          items: [],
           exits: [],
           stairsTo: "R6"
         }
@@ -351,12 +396,17 @@ class Game {
     console.log(`${this.name} has ended!`)
   }
 
+  removePlayer(player) {
+    const playerInd = this.players.indexOf(player)
+    this.players.splice(playerInd, 1)
+  }
+
   get info() {
     let playersString = ""
     for (let i = 0; i < this.players.length; i++) {
       playersString += `[P${i + 1}] **${this.players[i].user.tag}** \n`
     }
-    
+
     if (playersString === "") {
       playersString = "none"
     }
@@ -382,9 +432,13 @@ class Player {
     this._location = "none"
     this._health = 100
     this._cooldowns = {
+      _switch: 0,
       _movement: 0,
       _action: 0,
 
+      get switchWeapon() {
+        return this._switch
+      },
       get movement() {
         return this._movement
       },
@@ -394,7 +448,7 @@ class Player {
     }
 
     this._primary = weaponFists
-    this._secondary = { name: "none" }
+    this._secondary = weaponFists
     this._inventory = []
 
     Player.allIds.push(this.user.id)
@@ -491,8 +545,27 @@ class Player {
     const newLocations = Object.keys(this.currentGame.mapAreas[newFloor])
       .filter(room => room.charAt(0) === 'H') // can be single or double quotes
       .filter(room => !takenLocations.includes(room))
-    
+
     this._location = getRandomElementFrom(newLocations)
+  }
+
+  moveTo(room) {
+    if (this._cooldowns._movement > 0) return `you have a **${this.cooldowns.movement}s** cooldown for moving!`
+    if (!this.currentExits.includes(room)) return "not a current exit!"
+    this._location = room
+
+    this._cooldowns._movement = 2
+    this._decreaseMoveCooldown()
+    return false
+  }
+
+  useStairs() {
+    const locationHasStairs = Object.keys(this.currentGame.mapAreas[this.floor][this.location]).includes("stairsTo")
+    if (!locationHasStairs) {
+      return `${this.location} does not have stairs`
+    } else {
+      this._location = this.currentGame.mapAreas[this.floor][this.location].stairsTo
+    }
   }
 
   _decreaseMoveCooldown() {
@@ -502,30 +575,6 @@ class Player {
         this._decreaseMoveCooldown()
       }
     }, 500)
-  }
-
-  setMoveCooldown(cooldown) {
-    this._cooldowns._movement = cooldown
-    
-    this._decreaseMoveCooldown()
-  }
-
-  moveTo(room) {
-    if (this.currentExits.includes(room)) {
-      this._location = room
-      return true // no error
-    } else {
-      return false
-    }
-  }
-
-  changeFloor() {
-    if (Object.keys(this.currentGame.mapAreas[this.floor][this.location]).includes("stairsTo")) {
-      this._location = this.currentGame.mapAreas[this.floor][this.location].stairsTo
-      return true
-    } else {
-      return false
-    }
   }
 
   _decreaseActionCooldown() {
@@ -539,8 +588,27 @@ class Player {
 
   setActionCooldown(cooldown) {
     this._cooldowns._action = cooldown
-    
+
     this._decreaseActionCooldown()
+  }
+
+  _decreaseSwitchCooldown() {
+    setTimeout(() => {
+      this._cooldowns._switch -= 0.5
+      if (this.cooldowns._switch > 0) {
+        this._decreaseSwitchCooldown()
+      }
+    }, 500)
+  }
+
+  get cooldownInfo() {
+    return new MessageEmbed()
+      .setColor("#0099ff")
+      .setTitle(`${this.user.username}'s Cooldowns`)
+      .setDescription(`Movement Cooldown: ${this.cooldowns.movement}s\n` +
+        `Action Cooldown: ${this.cooldowns.action}s\n` +
+        `Switch Weapon Cooldown: ${this.cooldowns.switchWeapon}s`)
+      .setFooter("Area 0: No Survivors", bot.user.avatarURL())
   }
 
   loseHp(damage) {
@@ -552,34 +620,40 @@ class Player {
   }
 
   /**
-   * Remember to ping target and player
+   * Remember to ping target and ping player
    * @param {Player} target 
    * @returns an errorMessage or false
    */
   attack(target) {
-    if (this.cooldowns.action > 0) {
-      return `you have a **${this.cooldowns.action}s** cooldown!`
-    } else if (this.location !== target.location) {
-      return `${target.user.username} is too far away!`
-    } else {
-      this.setActionCooldown(this.primary.cooldown)
-      target.loseHp(this.primary.damage)
-      return false
-    }
+    if (this.cooldowns.action > 0) return `you have a **${this.cooldowns.action}s** cooldown for attacking!`
+    if (this.location !== target.location) return `${target.user.username} is too far away!`
+
+    this.setActionCooldown(this.primary.cooldown)
+    target.loseHp(this.primary.damage)
+  }
+
+  switchWeapons() {
+    if (this.cooldowns.switchWeapon > 0) return `you have a **${this.cooldowns.switchWeapon}s** cooldown for switching weapons!`
+
+    const primaryTemp = this._primary
+    this._primary = this._secondary
+    this._secondary = primaryTemp
+    this._cooldowns._switch = 2
+    this._decreaseSwitchCooldown()
   }
 
   equip(weaponNumber) {
-    if (this.secondary.name === "none") {
-      this._secondary = this._primary
-    }
-
     const inWeaponRoom = Object.keys(this.currentGame.mapAreas[this.floor][this.location]).includes("weapons")
     if (inWeaponRoom) {
       const roomHasWeapon = weaponNumber > 0 && weaponNumber <= this.currentGame.mapAreas[this.floor][this.location].weapons.length
-      // <= because weaponNumber is index + 1
+      // "<=" because weaponNumber is index + 1
       if (roomHasWeapon) {
-        this._primary = this.currentGame.mapAreas[this.floor][this.location].weapons[weaponNumber - 1]
-        return false
+        const weaponInd = weaponNumber - 1
+        const roomWeapons = this.currentGame.mapAreas[this.floor][this.location].weapons
+
+        if (this._primary.name !== "Fists") roomWeapons.push(this._primary)
+        this._primary = roomWeapons[weaponInd]
+        roomWeapons.splice(weaponInd, 1)
       } else {
         return `no weapon has that number`
       }
@@ -601,9 +675,13 @@ class Player {
     this._location = "none"
     this._health = 100
     this._cooldowns = {
+      _switch: 0,
       _movement: 0,
       _action: 0,
 
+      get switchWeapon() {
+        return this._switch
+      },
       get movement() {
         return this._movement
       },
@@ -613,18 +691,24 @@ class Player {
     }
 
     this._primary = weaponFists
-    this._secondary = { name: "none" }
+    this._secondary = weaponFists
     this._inventory = []
   }
 
   deleteThis() {
     const properties = Object.keys(this)
     const playerTag = this.user.tag
-    properties.forEach(property => {
-      delete this[property]
-    })
+    const timeDelay = (Math.max(this.cooldowns.movement, this.cooldowns.action) + 0.5) * 1000 // requires a time delay so this.decrease*Cooldown does not cause an error
 
-    console.log(`deleted ${playerTag}`)
+    setTimeout(() => {
+      Player.remove(this)
+      this.currentGame.removePlayer(this)
+      properties.forEach(property => {
+        delete this[property]
+      })
+
+      console.log(`deleted ${playerTag}`)
+    }, timeDelay)
   }
 
   get profile() {
@@ -633,8 +717,8 @@ class Player {
       .setTitle(`${this.user.username} in ${this.currentGame.name}`)
       .setThumbnail(this.user.avatarURL())
       .addFields(
-        { name: "Stats", value: `**Location**: ${this._location}\n **Health**: ${this._health}` },
-        { name: "Weapons", value: `**Primary**: ${this.primary.name.toUpperCase()}\n **Secondary**: ${this.secondary.name.toUpperCase()}` },
+        { name: "Stats", value: `**Location**: ${this._location}\n` + `**Health**: ${this._health}` },
+        { name: "Weapons", value: `**Primary**: ${this.primary.name}\n` + `**Secondary**: ${this.secondary.name}` },
         { name: "Item 1", value: this.inventory[0], inline: true },
         { name: "Item 2", value: this.inventory[1], inline: true },
         { name: "Item 3", value: this.inventory[2], inline: true }
@@ -644,6 +728,11 @@ class Player {
 
   static allIds = [] // contains all the playerIds
   static all = [] // contains all the players
+  static remove(player) {
+    const playerInd = Player.allIds.indexOf(player.user.id)
+    Player.allIds.splice(playerInd, 1)
+    Player.all.splice(playerInd, 1)
+  }
 }
 
 
@@ -686,18 +775,20 @@ class Weapon {
   static all = []
   static _chooseRandom() {
     const remainingSet = Weapon.all.filter(weapon => weapon._copiesLeft > 0) // makes a new copy of available weapons; weapons with no more copies are removed
-    
+
     return getRandomElementFrom(remainingSet) // copy, not reference
   }
 
   /**
-   * Adds a random weapon to every weapon room in Game game
+   * Adds a random weapon to every weapon room in a Game object
    * @param {Game} game 
    */
   static randomlyAddTo(game) {
     const floors = Object.keys(game.mapAreas)
     floors.forEach(floor => {
       const floorRooms = Object.keys(game.mapAreas[floor]).filter(room => Object.keys(game.mapAreas[floor][room]).includes("weapons"))
+      game.mapAreas.floor1.Safe.weapons.push(weaponRifle) // guaranteed extra rifle in Safe room
+      weaponRifle._copiesLeft--
 
       floorRooms.forEach(room => {
         const addedWeapon = Weapon._chooseRandom()
@@ -721,45 +812,15 @@ class Item {
   }
 }
 
-// First Game
-new Game();
-
 // Weapons
-const weaponFists = new Weapon(false, "fists", 3, 13, 0)
-const weaponRifle = new Weapon(false, "rifle", 4, 33, 2)
-const weaponPistol = new Weapon(false, "pistol", 4, 18, 3)
-const weaponSword = new Weapon(false, "sword", 8, 60, 1)
+const weaponFists = new Weapon(false, "Fists", 3, 13, 0)
+const weaponRifle = new Weapon(false, "Rifle", 4, 33, 3)
+const weaponPistol = new Weapon(false, "Pistol", 4, 18, 5)
+const weaponSword = new Weapon(false, "Sword", 8, 60, 1)
 
 
 // Items
 const bandages = new Item("bandages", 10, {}) // NOT DONE
 
-
-//Help command
-// Time/action = how much longer till action ends
-// heal
-// Look around
-// goto
-
-
-// Debugging purposes
-const obj1 = {
-  hi: "there",
-  bills: [1, 2],
-  noHi() {
-    this.hi = "no"
-  }
-}
-
-const billy = obj1.bills
-billy.splice(0, 1) // affects obj1
-console.log(obj1.bills) // prints "[2]"
-
-const set1 = [1, 2, 3]
-const set2 = set1
-set2.splice(0, 1) // affects set1
-console.log(set1) // prints "[2, 3]"
-
-const change = obj1
-change.noHi() // affects obj1
-console.log(obj1.hi) // prints "no"!
+// First Game
+new Game()
