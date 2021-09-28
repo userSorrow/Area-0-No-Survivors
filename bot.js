@@ -1,6 +1,7 @@
 /**
  * Finished: 27 September 2021 at 8:11 PM
  * Updated: 27 September 2021 at 11:10 PM
+ * Finalized: 27 September 2021 at 11:17 PM
  */
 
 //@ts-check
@@ -300,7 +301,7 @@ class CommandInfo {
       .setThumbnail(bot.user.avatarURL())
       .addFields(
         { name: "Player Manage Commands", value: "`create`, `join`, `profile`" },
-        { name: "Game Manage Commands", value: "`new`, `delete`, `games`, `game`, `start`" + "\nAnything below is for people in an active game" },
+        { name: "Game Manage Commands", value: "`new`, `delete`, `games`, `game`, `start`, `maps`" },
         { name: "Location Commands", value: "`look`, `move`, `stairs`, `cooldowns`" },
         { name: "Weapon Commands", value: "`attack`, `equip`, `switch`, `cooldowns`" },
         { name: "Item Commands", value: "`get`, `use`, `cooldowns`" },
@@ -326,6 +327,7 @@ const helpEquip = new CommandInfo("equip", ["e"], "equip [weapon number]", "Equi
 const helpSwitch = new CommandInfo("switch", [], "switch", "Switches your primary and secondary weapons")
 const helpGet = new CommandInfo("get", ["g", "take", "grab"], "get [item number]", "Gets an item in the room that has number [item number]. Maxmimum 3 items on hand.")
 const helpUse = new CommandInfo("use", ["u"], "use [item number]", "Uses an item you have with number [item number]. [item number] must be in the range of 1 - 3.")
+const helpMaps = new CommandInfo("maps", ["map"], "maps", "Shows the maps of each floor.")
 
 
 
