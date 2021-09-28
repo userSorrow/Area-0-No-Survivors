@@ -5,7 +5,7 @@
 //@ts-check
 require("dotenv").config()
 
-const { Client, MessageEmbed } = require("discord.js")
+const { Client, MessageEmbed, MessageAttachment } = require("discord.js")
 const bot = new Client()
 const PREFIX = "$"
 
@@ -63,6 +63,10 @@ bot.on('message', (message) => {
       }
       case "games":
         return message.channel.send(Game.allInfo)
+      case "map":
+      case "maps":
+        message.channel.send({ embed: mapInfo.floor1Embed })
+        return message.channel.send({ embed: mapInfo.floor2Embed })
       case "p":
       case "profile":
       case "j":
@@ -246,7 +250,6 @@ bot.on('message', (message) => {
   }
 })
 
-
 /* Help Command */
 
 class CommandInfo {
@@ -291,17 +294,17 @@ class CommandInfo {
   }
   static get helpEmbed() {
     return new MessageEmbed()
-    .setColor("#ebe700")
-    .setTitle("Commands")
-    .setThumbnail(bot.user.avatarURL())
-    .addFields(
-      { name: "Player Manage Commands", value: "`create`, `join`, `profile`" },
-      { name: "Game Manage Commands", value: "`new`, `delete`, `games`, `game`, `start`" + "\nAnything below is for people in an active game" },
-      { name: "Location Commands", value: "`look`, `move`, `stairs`, `cooldowns`" },
-      { name: "Weapon Commands", value: "`attack`, `equip`, `switch`, `cooldowns`" },
-      { name: "Item Commands", value: "`get`, `use`, `cooldowns`" },
-      { name: "Unrelated", value: "`hello`" }
-    )
+      .setColor("#ebe700")
+      .setTitle("Commands")
+      .setThumbnail(bot.user.avatarURL())
+      .addFields(
+        { name: "Player Manage Commands", value: "`create`, `join`, `profile`" },
+        { name: "Game Manage Commands", value: "`new`, `delete`, `games`, `game`, `start`" + "\nAnything below is for people in an active game" },
+        { name: "Location Commands", value: "`look`, `move`, `stairs`, `cooldowns`" },
+        { name: "Weapon Commands", value: "`attack`, `equip`, `switch`, `cooldowns`" },
+        { name: "Item Commands", value: "`get`, `use`, `cooldowns`" },
+        { name: "Unrelated", value: "`hello`" }
+      )
   }
 }
 
@@ -324,6 +327,25 @@ const helpGet = new CommandInfo("get", ["g", "take", "grab"], "get [item number]
 const helpUse = new CommandInfo("use", ["u"], "use [item number]", "Uses an item you have with number [item number]. [item number] must be in the range of 1 - 3.")
 
 
+
+const mapInfo = {
+  _attachment_map1: new MessageAttachment("./images/Area 0_Map 1.png", "map1.png"),
+  _attachment_map2: new MessageAttachment("./images/Area 0_Map 2.png", "map2.png"),
+  get floor1Embed() {
+    return new MessageEmbed()
+      .setColor("#ebe700")
+      .setTitle("Map: Floor 1")
+      .attachFiles([this._attachment_map1])
+      .setImage("attachment://map1.png")
+  },
+  get floor2Embed() {
+    return new MessageEmbed()
+    .setColor("#ebe700")
+    .setTitle("Map: Floor 2")
+    .attachFiles([this._attachment_map2])
+    .setImage("attachment://map2.png")
+  }
+}
 
 /**
  * 
